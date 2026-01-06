@@ -4,6 +4,7 @@ import Footer from './components/Footer';
 import CameraCard from './components/CameraCard';
 import OutputPanel from './components/OutputPanel';
 import ControlPanel from './components/ControlPanel';
+import LandingPage from './components/LandingPage';
 
 const ISL_SIGNS = [
   'Hello', 'Thank You', 'Please', 'Yes', 'No', 
@@ -11,6 +12,10 @@ const ISL_SIGNS = [
 ];
 
 function App() {
+  // State to control view navigation
+  const [showLanding, setShowLanding] = useState(true);
+
+  // App Core State
   const [darkMode, setDarkMode] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
@@ -19,9 +24,11 @@ function App() {
   const [convertedSpeech, setConvertedSpeech] = useState('');
   const detectionIntervalRef = useRef<number | null>(null);
 
+  // Clean up camera when component unmounts
   useEffect(() => {
-    startCamera();
-    return () => stopCamera();
+    return () => {
+      stopCamera();
+    };
   }, []);
 
   const startCamera = async () => {
@@ -78,6 +85,15 @@ function App() {
     setDarkMode(!darkMode);
   };
 
+  // If on landing page, show that component
+  if (showLanding) {
+    return <LandingPage onGetStarted={() => {
+      setShowLanding(false);
+      startCamera(); // Optional: Auto-start camera when entering app
+    }} />;
+  }
+
+  // Otherwise, show the main application
   return (
     <div className={`min-h-screen transition-colors duration-300 ${
       darkMode 
@@ -113,6 +129,19 @@ function App() {
                 onReset={handleReset}
                 onToggleDarkMode={toggleDarkMode}
               />
+              
+              {/* Back to Home Button (Optional) */}
+              <button 
+                onClick={() => {
+                  stopCamera();
+                  setShowLanding(true);
+                }}
+                className={`w-full mt-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                  darkMode ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                ← Back to Home
+              </button>
             </div>
           </div>
         </div>
