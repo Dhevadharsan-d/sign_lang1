@@ -1,17 +1,22 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import basicSsl from '@vitejs/plugin-basic-ssl' // Import the SSL plugin
 
 import { NodeGlobalsPolyfillPlugin } from '@esbuild-plugins/node-globals-polyfill'
 import { NodeModulesPolyfillPlugin } from '@esbuild-plugins/node-modules-polyfill'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    basicSsl() // Add the plugin here
+  ],
 
   server: {
-    host: '0.0.0.0',
+    host: '0.0.0.0', // Allows access from your phone
     port: 5173,
-    strictPort: true
+    strictPort: true,
+    https: true // Enables secure server
   },
 
   resolve: {

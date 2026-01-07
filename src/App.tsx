@@ -22,6 +22,10 @@ function App() {
   const [isDetecting, setIsDetecting] = useState(false);
   const [recognizedSign, setRecognizedSign] = useState('');
   const [convertedSpeech, setConvertedSpeech] = useState('');
+  
+  // New State for Camera Switching ('user' = front, 'environment' = back)
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+  
   const detectionIntervalRef = useRef<number | null>(null);
 
   // Clean up camera when component unmounts
@@ -31,10 +35,24 @@ function App() {
     };
   }, []);
 
-  const startCamera = async () => {
+  // Updated startCamera to accept an optional mode
+  const startCamera = async (requestedMode?: 'user' | 'environment') => {
+    // Stop any existing stream before starting a new one
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+    }
+
+    const modeToUse = requestedMode || facingMode;
+
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 1280, height: 720 }
+        video: { 
+          facingMode: modeToUse,
+          // Use 'ideal' constraints for mobile compatibility
+          width: { ideal: 1280 }, 
+          height: { ideal: 720 }
+        },
+        audio: false
       });
       setStream(mediaStream);
       setIsCameraActive(true);
@@ -49,6 +67,17 @@ function App() {
       stream.getTracks().forEach(track => track.stop());
       setStream(null);
       setIsCameraActive(false);
+    }
+  };
+
+  // New function to toggle camera
+  const handleToggleCamera = () => {
+    const newMode = facingMode === 'user' ? 'environment' : 'user';
+    setFacingMode(newMode);
+    
+    // Only restart the camera if it's currently active
+    if (isCameraActive) {
+      startCamera(newMode);
     }
   };
 
@@ -85,15 +114,13 @@ function App() {
     setDarkMode(!darkMode);
   };
 
-  // If on landing page, show that component
   if (showLanding) {
     return <LandingPage onGetStarted={() => {
       setShowLanding(false);
-      startCamera(); // Optional: Auto-start camera when entering app
+      startCamera(); 
     }} />;
   }
 
-  // Otherwise, show the main application
   return (
     <div className={`min-h-screen transition-colors duration-300 ${
       darkMode 
@@ -128,9 +155,9 @@ function App() {
                 onStopDetection={handleStopDetection}
                 onReset={handleReset}
                 onToggleDarkMode={toggleDarkMode}
+                onToggleCamera={handleToggleCamera} // Pass the new handler
               />
               
-              {/* Back to Home Button (Optional) */}
               <button 
                 onClick={() => {
                   stopCamera();
