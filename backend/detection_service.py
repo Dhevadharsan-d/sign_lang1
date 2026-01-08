@@ -1,39 +1,91 @@
-import random
 import cv2
 import numpy as np
+import mediapipe as mp
+from tensorflow.keras.models import load_model
 
-# Matches the list from your frontend App.tsx
-ISL_SIGNS = [
-    'Hello', 'Thank You', 'Please', 'Yes', 'No',
-    'Help', 'Good Morning', 'Goodbye', 'Sorry', 'Welcome'
-]
+# -------------------------------
+# 1. Load Model ONCE
+# -------------------------------
+print("🔄 Loading action recognition model...")
+model = load_model("action.tflite")
+print("✅ Model loaded successfully")
 
-class SignLanguageModel:
-    def __init__(self):
-        # Load your actual model here (e.g., TensorFlow, PyTorch, MediaPipe)
-        print("Model initialized")
+# -------------------------------
+# 2. Constants
+# -------------------------------
+SEQUENCE_LENGTH = 20
+SMOOTHING_WINDOW = 6
+MIN_CONSISTENT = 4
+threshold = 0.4
 
-    def predict(self, image_bytes: bytes) -> dict:
-        """
-        Process the image and return the predicted sign.
-        """
-        # 1. Convert bytes to numpy array for OpenCV
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+actions = np.array(["hello", "thanks", "iloveyou"])  # update if needed
 
-        # --- REAL MODEL INFERENCE WOULD GO HERE ---
-        # Example: results = self.model.process(img)
-        # prediction = results.prediction
-        # ------------------------------------------
+# -------------------------------
+# 3. MediaPipe Setup
+# -------------------------------
+mp_holistic = mp.solutions.holistic
+holistic = mp_holistic.Holistic(
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.5
+)
 
-        # For now, we simulate detection just like your frontend
-        detected_sign = random.choice(ISL_SIGNS)
-        confidence = round(random.uniform(0.7, 0.99), 2)
+# -------------------------------
+# 4. Runtime Buffers
+# -------------------------------
+sequence = []
+sentence = []
+predictions = []
 
-        return {
-            "sign": detected_sign,
-            "confidence": confidence
-        }
+# -------------------------------
+# 5. Prediction Function
+# -------------------------------
+def predict(image_bytes: bytes):
+    global sequence, sentence, predictions
 
-# Create a singleton instance
-detector = SignLanguageModel()
+    # Decode image bytes
+    np_img = np.frombuffer(image_bytes, np.uint8)
+    frame = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
+
+    if frame is None:
+        raise ValueError("Invalid image data")
+
+    # MediaPipe detection
+    image, results = mediapipe_detection(frame, holistic)
+
+    # Sequence buffer
+    keypoints = extract_keypoints(results)
+    sequence.append(keypoints)
+    sequence = sequence[-SEQUENCE_LENGTH:]
+
+    predicted_action = None
+    confidence = 0.0
+
+    # Prediction
+    if len(sequence) == SEQUENCE_LENGTH:
+        res = model.predict(
+            np.expand_dims(sequence, axis=0),
+            verbose=0
+        )[0]
+
+        pred_idx = np.argmax(res)
+        confidence = float(res[pred_idx])
+
+        predictions.append(pred_idx)
+        predictions = predictions[-SMOOTHING_WINDOW:]
+
+        if predictions.count(pred_idx) >= MIN_CONSISTENT:
+            if confidence > threshold:
+                action = actions[pred_idx]
+
+                if len(sentence) == 0 or action != sentence[-1]:
+                    sentence.append(action)
+
+                predicted_action = action
+
+        sentence[:] = sentence[-5:]
+
+    return {
+        "prediction": predicted_action,
+        "confidence": confidence,
+        "sentence": sentence
+    }
