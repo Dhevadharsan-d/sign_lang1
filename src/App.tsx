@@ -117,23 +117,43 @@ function App() {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     canvas.toBlob(async blob => {
-      if (!blob) return;
+      if (!blob) {
+        console.error("❌ Error: Canvas failed to generate blob");
+        return;
+      }
+
+      // DEBUG: Log that we are attempting to send a frame
+      console.log(`📸 Sending frame... Size: ${blob.size} bytes`);
 
       const formData = new FormData();
       formData.append('file', blob, 'frame.jpg');
 
       try {
+        // DEBUG: Log the URL we are hitting
+        const API_URL = 'http://localhost:8000/predict';
+        console.log(`🌐 Fetching: ${API_URL}`);
+
         const response = await fetch(
-          'http://localhost:8000/predict',
+          API_URL,
           { method: 'POST', body: formData }
         );
 
-        if (!response.ok) return;
+        // DEBUG: Log the raw response status
+        console.log(`📡 Response Status: ${response.status} ${response.statusText}`);
+
+        if (!response.ok) {
+          console.error(`❌ Server Error: ${response.status}`);
+          return;
+        }
 
         const data = await response.json();
 
+        // DEBUG: Log the actual data received from backend
+        console.log("✅ Backend Data:", data);
+
         // ✅ FIX 1: correct response field
         if (data.prediction) {
+          console.log(`👋 Recognized: ${data.prediction}`);
           setRecognizedSign(data.prediction);
 
           // ✅ sentence builder (debounced)
@@ -148,7 +168,8 @@ function App() {
           });
         }
       } catch (err) {
-        console.error('Prediction error:', err);
+        // DEBUG: Log network errors (like Connection Refused)
+        console.error('🔥 CRITICAL NETWORK ERROR:', err);
       }
     }, 'image/jpeg', 0.8);
   };
