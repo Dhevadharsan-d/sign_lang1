@@ -4,67 +4,119 @@ import Footer from './components/Footer';
 import CameraCard from './components/CameraCard';
 import OutputPanel from './components/OutputPanel';
 import ControlPanel from './components/ControlPanel';
+import TextToSpeechPanel from './components/TextToSpeechPanel';
 import LandingPage from './components/LandingPage';
 
-const ISL_SIGNS = [
-  'Hello', 'Thank You', 'Please', 'Yes', 'No', 
-  'Help', 'Good Morning', 'Goodbye', 'Sorry', 'Welcome'
-];
-
 function App() {
-  // State to control view navigation
   const [showLanding, setShowLanding] = useState(true);
-
-  // App Core State
   const [darkMode, setDarkMode] = useState(false);
+  
+  // Camera & ML State
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isDetecting, setIsDetecting] = useState(false);
   const [recognizedSign, setRecognizedSign] = useState('');
   const [convertedSpeech, setConvertedSpeech] = useState('');
-  const detectionIntervalRef = useRef<number | null>(null);
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
 
-  // Clean up camera when component unmounts
+  // Refs
+  const detectionIntervalRef = useRef<number | null>(null);
+  const processingVideoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const isProcessing = useRef(false);
+
+  // Cleanup
   useEffect(() => {
-    return () => {
-      stopCamera();
-    };
+    return () => stopCamera();
   }, []);
 
-  const startCamera = async () => {
+  // Sync stream
+  useEffect(() => {
+    if (processingVideoRef.current && stream) {
+      processingVideoRef.current.srcObject = stream;
+    }
+  }, [stream]);
+
+  // Camera Functions
+  const startCamera = async (requestedMode?: 'user' | 'environment') => {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    const mode = requestedMode || facingMode;
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 1280, height: 720 }
+        video: { facingMode: mode, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
       });
       setStream(mediaStream);
       setIsCameraActive(true);
-    } catch (error) {
-      console.error('Error accessing camera:', error);
-      alert('Unable to access camera. Please ensure camera permissions are granted.');
+    } catch (err) {
+      console.error(err);
+      alert('Camera access denied');
     }
   };
 
   const stopCamera = () => {
     if (stream) {
-      stream.getTracks().forEach(track => track.stop());
+      stream.getTracks().forEach(t => t.stop());
       setStream(null);
-      setIsCameraActive(false);
     }
+    handleStopDetection();
+    setIsCameraActive(false);
   };
 
-  const simulateGestureDetection = () => {
-    const randomSign = ISL_SIGNS[Math.floor(Math.random() * ISL_SIGNS.length)];
-    setRecognizedSign(randomSign);
-    setTimeout(() => {
-      setConvertedSpeech(prev => (prev ? `${prev} ${randomSign}` : randomSign));
-    }, 500);
+  const toggleCamera = () => {
+    const newMode = facingMode === 'user' ? 'environment' : 'user';
+    setFacingMode(newMode);
+    if (isCameraActive) startCamera(newMode);
+  };
+
+  // ML Detection Logic
+  const detectFrame = async () => {
+    if (isProcessing.current || !processingVideoRef.current || !canvasRef.current || !isCameraActive) return;
+
+    const video = processingVideoRef.current;
+    if (video.readyState !== 4) return;
+
+    isProcessing.current = true;
+    const canvas = canvasRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) { isProcessing.current = false; return; }
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    canvas.toBlob(async blob => {
+      if (!blob) { isProcessing.current = false; return; }
+      
+      const formData = new FormData();
+      formData.append('file', blob, 'frame.jpg');
+
+      try {
+        const response = await fetch('http://127.0.0.1:8000/predict', { method: 'POST', body: formData });
+        if (!response.ok) return;
+        const data = await response.json();
+        
+        if (data.prediction) {
+          setRecognizedSign(data.prediction);
+          setConvertedSpeech(prev => {
+            const words = prev.trim().split(' ');
+            return words[words.length - 1] !== data.prediction 
+              ? (prev ? `${prev} ${data.prediction}` : data.prediction) 
+              : prev;
+          });
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        isProcessing.current = false;
+      }
+    }, 'image/jpeg', 0.8);
   };
 
   const handleStartDetection = () => {
+    if (isDetecting) return;
     setIsDetecting(true);
-    detectionIntervalRef.current = window.setInterval(() => {
-      simulateGestureDetection();
-    }, 3000);
+    detectionIntervalRef.current = window.setInterval(detectFrame, 100);
   };
 
   const handleStopDetection = () => {
@@ -81,72 +133,54 @@ function App() {
     setConvertedSpeech('');
   };
 
-  const toggleDarkMode = () => {
-    setDarkMode(!darkMode);
+  // ✅ HANDLER FOR MANUAL TEXT UPDATE
+  const handleManualTextTranslated = (original: string, translated: string) => {
+    setRecognizedSign(original);
+    // Decode the URL encoded string from backend
+    try {
+        setConvertedSpeech(decodeURIComponent(translated));
+    } catch (e) {
+        setConvertedSpeech(translated);
+    }
   };
 
-  // If on landing page, show that component
-  if (showLanding) {
-    return <LandingPage onGetStarted={() => {
-      setShowLanding(false);
-      startCamera(); // Optional: Auto-start camera when entering app
-    }} />;
-  }
+  if (showLanding) return <LandingPage onGetStarted={() => { setShowLanding(false); startCamera(); }} />;
 
-  // Otherwise, show the main application
   return (
-    <div className={`min-h-screen transition-colors duration-300 ${
-      darkMode 
-        ? 'bg-gradient-to-br from-gray-900 via-slate-900 to-black' 
-        : 'bg-gradient-to-br from-teal-50 via-white to-slate-100'
-    }`}>
+    <div className={`min-h-screen ${darkMode ? 'bg-gradient-to-br from-gray-900 to-black' : 'bg-gradient-to-br from-teal-50 to-slate-100'}`}>
       <Header darkMode={darkMode} />
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto p-6">
+        <video ref={processingVideoRef} style={{ display: 'none' }} autoPlay playsInline muted />
+        <canvas ref={canvasRef} style={{ display: 'none' }} />
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          
+          {/* LEFT COLUMN: Camera & Output */}
           <div className="lg:col-span-2 space-y-8">
-            <CameraCard
-              darkMode={darkMode}
-              isActive={isCameraActive}
-              stream={stream}
-            />
+            <CameraCard darkMode={darkMode} isActive={isCameraActive} stream={stream} />
+            <OutputPanel darkMode={darkMode} recognizedSign={recognizedSign} convertedSpeech={convertedSpeech} />
+          </div>
 
-            <OutputPanel
+          {/* RIGHT COLUMN: Controls & Manual Input */}
+          <div className="space-y-8">
+            {/* Pass the callback to update the main UI when manual text is spoken */}
+            <TextToSpeechPanel darkMode={darkMode} onTextTranslated={handleManualTextTranslated} />
+            
+            <ControlPanel
               darkMode={darkMode}
-              recognizedSign={recognizedSign}
-              convertedSpeech={convertedSpeech}
+              isDetecting={isDetecting}
+              isCameraActive={isCameraActive}
+              onStartDetection={handleStartDetection}
+              onStopDetection={handleStopDetection}
+              onReset={handleReset}
+              onToggleDarkMode={() => setDarkMode(!darkMode)}
+              onToggleCamera={toggleCamera}
             />
           </div>
 
-          <div className="lg:col-span-1">
-            <div className="sticky top-24">
-              <ControlPanel
-                darkMode={darkMode}
-                isDetecting={isDetecting}
-                isCameraActive={isCameraActive}
-                onStartDetection={handleStartDetection}
-                onStopDetection={handleStopDetection}
-                onReset={handleReset}
-                onToggleDarkMode={toggleDarkMode}
-              />
-              
-              {/* Back to Home Button (Optional) */}
-              <button 
-                onClick={() => {
-                  stopCamera();
-                  setShowLanding(true);
-                }}
-                className={`w-full mt-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                  darkMode ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'
-                }`}
-              >
-                ← Back to Home
-              </button>
-            </div>
-          </div>
         </div>
       </main>
-
       <Footer darkMode={darkMode} />
     </div>
   );

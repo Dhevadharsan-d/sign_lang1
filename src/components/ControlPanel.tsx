@@ -1,4 +1,4 @@
-import { Play, Square, RotateCcw, Moon, Sun } from 'lucide-react';
+import { Play, Square, RotateCcw, Moon, Sun, SwitchCamera } from 'lucide-react';
 
 interface ControlPanelProps {
   darkMode: boolean;
@@ -8,6 +8,7 @@ interface ControlPanelProps {
   onStopDetection: () => void;
   onReset: () => void;
   onToggleDarkMode: () => void;
+  onToggleCamera: () => void; // New Prop
 }
 
 export default function ControlPanel({
@@ -17,7 +18,8 @@ export default function ControlPanel({
   onStartDetection,
   onStopDetection,
   onReset,
-  onToggleDarkMode
+  onToggleDarkMode,
+  onToggleCamera // Destructure new prop
 }: ControlPanelProps) {
   const cardClass = `rounded-2xl shadow-xl p-6 transition-colors duration-300 ${
     darkMode 
@@ -32,6 +34,7 @@ export default function ControlPanel({
       </h2>
 
       <div className="space-y-4">
+        {/* Detection Controls */}
         <button
           onClick={onStartDetection}
           disabled={isDetecting || !isCameraActive}
@@ -56,6 +59,24 @@ export default function ControlPanel({
         >
           <Square className="w-5 h-5 fill-current" />
           Stop Detection
+        </button>
+
+        <div className={`h-px w-full my-2 ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`} />
+
+        {/* Camera Controls */}
+        <button
+          onClick={onToggleCamera}
+          disabled={!isCameraActive}
+          className={`w-full flex items-center justify-center gap-3 px-6 py-4 rounded-xl font-medium transition-all duration-200 border-2 hover:-translate-y-0.5 ${
+            !isCameraActive 
+              ? 'border-gray-200 text-gray-400 cursor-not-allowed opacity-50' 
+              : darkMode
+                ? 'border-gray-600 text-teal-300 hover:bg-gray-700 hover:text-white'
+                : 'border-teal-100 text-teal-600 hover:bg-teal-50 hover:border-teal-200'
+          }`}
+        >
+          <SwitchCamera className="w-5 h-5" />
+          Switch Camera
         </button>
 
         <button
